@@ -8,4 +8,4 @@ Upload make_text.html & realtime.html.
 〜Notice  
 
 If you want to know me more, click here⇩  
-<a href="https://github.com/mamidayo1923-lang/RemGrowingHome/edit/main/README.md">RemGrowing-Home</a>
+<a href="https://github.com/mamidayo1923-lang/RemGrowingHome">RemGrowing-Home</a>
