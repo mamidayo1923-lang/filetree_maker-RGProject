@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>フォルダ構造ツリー生成ツール</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 800px;
+      margin: 20px auto;
+      padding: 0 20px;
+    }
+    #drop-zone {
+      border: 2px dashed #ccc;
+      border-radius: 8px;
+      padding: 40px;
+      text-align: center;
+      background-color: #f9f9f9;
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+    #drop-zone.dragover {
+      background-color: #e1f5fe;
+      border-color: #0288d1;
+    }
+    .controls {
+      margin-bottom: 10px;
+      display: flex;
+      gap: 10px;
+    }
+    textarea {
+      width: 100%;
+      height: 400px;
+      font-family: monospace;
+      font-size: 14px;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 8px 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>ファイル・フォルダツリー生成ツール</h2>
+
+  <div id="drop-zone">
+    ここにフォルダやファイルをドラッグ＆ドロップ<br>
+    またはクリックして選択
+    <input type="file" id="file-input" webkitdirectory multiple style="display: none;">
+  </div>
+
+  <div class="controls">
+    <button id="copy-btn">テキストをコピー</button>
+    <button id="clear-btn">クリア</button>
+  </div>
+
+  <textarea id="output" readonly placeholder="ここにツリー構造が出力されます..."></textarea>
+
+  <script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const output = document.getElementById('output');
+    const copyBtn = document.getElementById('copy-btn');
+    const clearBtn = document.getElementById('clear-btn');
+
+    // クリックでファイル選択
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', (e) => {
+      handleFiles(e.target.files);
+    });
+
+    // ドラッグ＆ドロップ処理
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+
+      const items = e.dataTransfer.items;
+      if (!items) return;
+
+      const tree = {};
+
+      // DataTransferItem / FileSystemEntry から読み込み
+      const queue = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.webkitGetAsEntry) {
+          const entry = item.webkitGetAsEntry();
+          if (entry) {
+            queue.push(readEntry(entry));
+          }
+        }
+      }
+
+      const filePaths = (await Promise.all(queue)).flat();
+      buildAndRenderTree(filePaths);
+    });
+
+    // FileSystemEntryを全走査する再帰関数
+    function readEntry(entry, path = "") {
+      return new Promise((resolve) => {
+        const currentPath = path ? `${path}/${entry.name}` : entry.name;
+        if (entry.isFile) {
+          resolve([currentPath]);
+        } else if (entry.isDirectory) {
+          const dirReader = entry.createReader();
+          dirReader.readEntries(async (entries) => {
+            const promises = entries.map(e => readEntry(e, currentPath));
+            const results = await Promise.all(promises);
+            // 空フォルダ用の階層情報も保持したい場合はパスを追加
+            resolve([currentPath + '/', ...results.flat()]);
+          });
+        }
+      });
+    }
+
+    // 標準の<input type="file">からのファイル選択時
+    function handleFiles(files) {
+      const paths = [];
+      for (let file of files) {
+        paths.push(file.webkitRelativePath || file.name);
+      }
+      buildAndRenderTree(paths);
+    }
+
+    // パス一覧からネストしたオブジェクト構造を作成
+    function buildAndRenderTree(paths) {
+      const root = {};
+
+      paths.forEach(path => {
+        const parts = path.split('/').filter(Boolean);
+        let current = root;
+
+        parts.forEach((part, index) => {
+          if (!current[part]) {
+            current[part] = index === parts.length - 1 && !path.endsWith('/') ? null : {};
+          }
+          if (current[part] !== null) {
+            current = current[part];
+          }
+        });
+      });
+
+      output.value = generateTreeText(root);
+    }
+
+    // オブジェクト構造をツリー文字列に変換
+    function generateTreeText(node, prefix = '') {
+      let result = '';
+      const keys = Object.keys(node);
+      
+      // フォルダを先、ファイルを後にソート
+      keys.sort((a, b) => {
+        const aIsDir = node[a] !== null;
+        const bIsDir = node[b] !== null;
+        if (aIsDir === bIsDir) return a.localeCompare(b);
+        return aIsDir ? -1 : 1;
+      });
+
+      keys.forEach((key, index) => {
+        const isLast = index === keys.length - 1;
+        const connector = isLast ? '└── ' : '├── ';
+        const childPrefix = isLast ? '    ' : '│   ';
+
+        result += prefix + connector + key + '\n';
+
+        if (node[key] !== null) {
+          result += generateTreeText(node[key], prefix + childPrefix);
+        }
+      });
+
+      return result;
+    }
+
+    // コピー機能
+    copyBtn.addEventListener('click', () => {
+      if (!output.value) return;
+      navigator.clipboard.writeText(output.value);
+      alert('クリップボードにコピーしました！');
+    });
+
+    // クリア機能
+    clearBtn.addEventListener('click', () => {
+      output.value = '';
+      fileInput.value = '';
+    });
+  </script>
+</body>
+</html>

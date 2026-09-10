@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>リアルタイム ファイルツリー表示器</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 20px;
+      background-color: #f8f9fa;
+      color: #333;
+    }
+    h1 {
+      font-size: 1.2rem;
+      color: #495057;
+    }
+    .controls {
+      margin-bottom: 15px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    button {
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      background-color: #0d6efd;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #0b5ed7;
+    }
+    .status {
+      font-size: 0.85rem;
+      color: #6c757d;
+    }
+    #tree {
+      background: white;
+      padding: 15px;
+      border-radius: 6px;
+      border: 1px solid #dee2e6;
+      font-family: monospace;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    ul {
+      list-style-type: none;
+      padding-left: 20px;
+      margin: 0;
+    }
+    li {
+      position: relative;
+    }
+    .folder {
+      font-weight: bold;
+      color: #2b6cb0;
+    }
+    .file {
+      color: #4a5568;
+    }
+    .file-size {
+      font-size: 0.85em;
+      color: #888;
+      margin-left: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>フォルダ選択＆ツリー表示</h1>
+  
+  <div class="controls">
+    <button id="select-dir">フォルダを選択</button>
+    <span class="status" id="status-text">フォルダが選択されていません</span>
+  </div>
+
+  <div id="tree">（ここにファイルツリーが表示されます）</div>
+
+  <script>
+    let dirHandle = null;
+    let watchTimer = null;
+
+    const selectBtn = document.getElementById('select-dir');
+    const statusText = document.getElementById('status-text');
+    const treeDiv = document.getElementById('tree');
+
+    selectBtn.addEventListener('click', async () => {
+      try {
+        dirHandle = await window.showDirectoryPicker();
+        statusText.textContent = `監視中: ${dirHandle.name}`;
+        
+        await updateTree();
+        startWatching();
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error(err);
+          alert('フォルダの読み込みに失敗しました。');
+        }
+      }
+    });
+
+    function startWatching() {
+      if (watchTimer) clearInterval(watchTimer);
+      watchTimer = setInterval(async () => {
+        if (dirHandle) {
+          await updateTree();
+        }
+      }, 2000);
+    }
+
+    async function updateTree() {
+      if (!dirHandle) return;
+      const ul = await buildTreeUI(dirHandle);
+      treeDiv.innerHTML = '';
+      treeDiv.appendChild(ul);
+    }
+
+    // ファイルサイズを適切な単位（B, KB, MB, GB）にフォーマットする関数
+    function formatBytes(bytes, decimals = 1) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const dm = decimals < 0 ? 0 : decimals;
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    }
+
+    async function buildTreeUI(handle) {
+      const ul = document.createElement('ul');
+      const entries = [];
+
+      for await (const entry of handle.values()) {
+        if (entry.name.startsWith('.')) {
+          continue;
+        }
+        entries.push(entry);
+      }
+
+      entries.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+
+      for (const entry of entries) {
+        const li = document.createElement('li');
+
+        if (entry.kind === 'directory') {
+          li.className = 'folder';
+          li.textContent = `📁 ${entry.name}`;
+          const subUl = await buildTreeUI(entry);
+          li.appendChild(subUl);
+        } else if (entry.kind === 'file') {
+          li.className = 'file';
+          
+          // ファイル情報の取得とサイズ計算
+          try {
+            const fileData = await entry.getFile();
+            const sizeStr = formatBytes(fileData.size);
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = `📄 ${entry.name}`;
+            
+            const sizeSpan = document.createElement('span');
+            sizeSpan.className = 'file-size';
+            sizeSpan.textContent = `(${sizeStr})`;
+
+            li.appendChild(nameSpan);
+            li.appendChild(sizeSpan);
+          } catch (e) {
+            // ファイルアクセス権限等でエラーが出た場合のフォールバック
+            li.textContent = `📄 ${entry.name}`;
+          }
+        }
+        ul.appendChild(li);
+      }
+
+      return ul;
+    }
+  </script>
+</body>
+</html>
